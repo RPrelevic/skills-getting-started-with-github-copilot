@@ -1,0 +1,54 @@
+name: Update Coverage Badge
+
+on:
+  push:
+    branches: [ main, master, accelerate-with-copilot ]
+  pull_request:
+    branches: [ main, master, accelerate-with-copilot ]
+
+jobs:
+  test-and-badge:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run tests and update badge
+      run: |
+        python scripts/update_coverage_badge.py
+        
+    - name: Check for changes
+      id: verify-changed-files
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Commit badge update
+      if: steps.verify-changed-files.outputs.changed == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add src/README.md
+        git commit -m "🔄 Auto-update coverage badge [skip ci]" || exit 0
+        
+    - name: Push changes
+      if: steps.verify-changed-files.outputs.changed == 'true' && github.event_name == 'push'
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
