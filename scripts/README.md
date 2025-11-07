@@ -5,7 +5,8 @@ This directory contains automation scripts for the project.
 ## Files
 
 ### `update_coverage_badge.py`
-Python script that automatically:
+Cross-platform Python script that automatically:
+- Detects the correct Python command (`py` on Windows, `python3`/`python` on Linux/Mac)
 - Runs the test suite with coverage
 - Extracts coverage percentage
 - Updates the coverage badge in `src/README.md`

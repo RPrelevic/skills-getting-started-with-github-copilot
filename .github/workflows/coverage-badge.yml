@@ -25,6 +25,13 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
+    - name: Debug Python environment
+      run: |
+        which python
+        python --version
+        which python3 || echo "python3 not found"
+        python3 --version || echo "python3 version check failed"
+        
     - name: Run tests and update badge
       run: |
         python scripts/update_coverage_badge.py

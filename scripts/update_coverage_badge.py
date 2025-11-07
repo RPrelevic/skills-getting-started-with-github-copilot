@@ -23,15 +23,33 @@ def get_coverage_color(percentage):
         return "red"
 
 
+def get_python_command():
+    """Determine the best Python command to use based on the platform"""
+    if os.name == "nt":  # Windows
+        return "py"
+    else:  # Linux/Mac
+        # Try python3 first, then python
+        for cmd in ["python3", "python"]:
+            try:
+                subprocess.run([cmd, "--version"], capture_output=True, check=True)
+                return cmd
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                continue
+        raise RuntimeError("No suitable Python command found (tried python3, python)")
+
+
 def run_tests_with_coverage():
     """Run pytest with coverage and capture the output"""
     try:
         # Get the project root directory (parent of scripts directory)
         project_root = Path(__file__).parent.parent
         
+        # Determine the Python command to use
+        python_cmd = get_python_command()
+        
         # Run pytest with coverage from project root
         result = subprocess.run(
-            ["py", "-m", "pytest", "tests/", "--cov=src", "--cov-report=term"],
+            [python_cmd, "-m", "pytest", "tests/", "--cov=src", "--cov-report=term"],
             capture_output=True,
             text=True,
             cwd=project_root
