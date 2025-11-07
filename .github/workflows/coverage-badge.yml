@@ -6,14 +6,20 @@ on:
   pull_request:
     branches: [ main, master, accelerate-with-copilot ]
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   test-and-badge:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
         
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -25,37 +31,68 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Debug Python environment
+    - name: Run tests with coverage
       run: |
-        which python
-        python --version
-        which python3 || echo "python3 not found"
-        python3 --version || echo "python3 version check failed"
+        python -m pytest tests/ --cov=src --cov-report=term | tee coverage_output.txt
         
-    - name: Run tests and update badge
+    - name: Extract coverage and update badge
+      id: coverage
       run: |
-        python scripts/update_coverage_badge.py
+        # Extract coverage percentage
+        COVERAGE=$(grep "TOTAL" coverage_output.txt | awk '{print $4}' | sed 's/%//')
+        echo "Coverage: $COVERAGE%"
+        echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+        
+        # Determine badge color
+        if [ "$COVERAGE" -ge 90 ]; then
+          COLOR="brightgreen"
+          EMOJI="🟢"
+        elif [ "$COVERAGE" -ge 75 ]; then
+          COLOR="orange"
+          EMOJI="🟡"
+        else
+          COLOR="red"
+          EMOJI="🔴"
+        fi
+        
+        echo "color=$COLOR" >> $GITHUB_OUTPUT
+        echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+        
+        # Update badge in README
+        NEW_BADGE="![Coverage](https://img.shields.io/badge/Coverage-${COVERAGE}%25-${COLOR}?style=flat-square)"
+        sed -i "s|!\[Coverage\](https://img\.shields\.io/badge/Coverage-[0-9]*%25-[a-z]*?style=flat-square)|$NEW_BADGE|g" src/README.md
         
     - name: Check for changes
       id: verify-changed-files
       run: |
-        if [ -n "$(git status --porcelain)" ]; then
-          echo "changed=true" >> $GITHUB_OUTPUT
-        else
-          echo "changed=false" >> $GITHUB_OUTPUT
-        fi
+        git diff --quiet src/README.md || echo "changed=true" >> $GITHUB_OUTPUT
         
-    - name: Commit badge update
-      if: steps.verify-changed-files.outputs.changed == 'true'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add src/README.md
-        git commit -m "🔄 Auto-update coverage badge [skip ci]" || exit 0
-        
-    - name: Push changes
+    - name: Commit and push changes (Push events only)
       if: steps.verify-changed-files.outputs.changed == 'true' && github.event_name == 'push'
-      uses: ad-m/github-push-action@master
+      run: |
+        git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add src/README.md
+        git commit -m "🔄 Auto-update coverage badge to ${{ steps.coverage.outputs.percentage }}% [skip ci]"
+        git push
+        
+    - name: Comment on PR with coverage info
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: ${{ github.ref }}
+        script: |
+          const coverage = '${{ steps.coverage.outputs.percentage }}';
+          const emoji = '${{ steps.coverage.outputs.emoji }}';
+          const color = '${{ steps.coverage.outputs.color }}';
+          
+          let statusText = '';
+          if (coverage >= 90) statusText = 'Excellent coverage!';
+          else if (coverage >= 75) statusText = 'Good coverage';
+          else statusText = 'Coverage needs improvement';
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 📊 Test Coverage Report\n\n${emoji} **Coverage: ${coverage}%** - ${statusText}\n\n> Coverage badge will be automatically updated when this PR is merged.`
+          });
